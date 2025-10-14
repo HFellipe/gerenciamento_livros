@@ -83,15 +83,22 @@ def carregar_icone(nome_arquivo, tamanho=(24, 24)):
             return None
     return None
 
-def criar_botao_menu(texto, comando, icone_path=None):
-    img = carregar_icone(icone_path) if icone_path else None
-    btn = Button(frameMenu, text=texto, image=img, compound="left", anchor="w",
-                 bg=co_preto, fg=co_branco, font=("Arial", 10, "bold"),
-                 relief="flat", command=comando)
+def criar_botao_menu_ctk(texto, comando, icone_arquivo=None):
+    img = carregar_icone(icone_arquivo) if icone_arquivo else None
+    btn = ctk.CTkButton(
+        frameMenu,
+        text=texto,
+        image=img,
+        compound="left",
+        fg_color=co_preto,
+        text_color=co_branco,
+        hover_color=co_azul,
+        width=180,
+        command=comando
+    )
     btn.image = img
-    btn.pack(fill="x", pady=5, padx=10)
-    btn.bind("<Enter>", lambda e: btn.config(bg=co_azul))
-    btn.bind("<Leave>", lambda e: btn.config(bg=co_preto))
+    # Alinha todos os botões à esquerda
+    btn.pack(fill="x", pady=5, padx=0, anchor="w")
     return btn
 
 # =========================================================
@@ -117,7 +124,7 @@ def form_novo_usuario():
         messagebox.showinfo("Sucesso", f"Usuário '{entradas['nome'].get()}' cadastrado!")
         form_novo_usuario()
 
-    Button(frameConteudo, text="Cadastrar", bg=co_verde, fg=co_branco, width=20, command=salvar).pack(pady=10)
+    ctk.CTkButton(frameConteudo, text="Cadastrar", fg_color=co_verde, command=salvar).pack(pady=10)
 
 # =========================================================
 # Cadastro de Livros
@@ -152,7 +159,7 @@ def form_novo_livro():
         messagebox.showinfo("Sucesso", f"Livro '{entradas['titulo'].get()}' cadastrado!")
         form_novo_livro()
 
-    Button(frameConteudo, text="Cadastrar", bg=co_verde, fg=co_branco, width=20, command=salvar).pack(pady=10)
+    ctk.CTkButton(frameConteudo, text="Cadastrar", fg_color=co_verde, command=salvar).pack(pady=10)
 
 # =========================================================
 # Listagem de livros e usuários
@@ -176,7 +183,7 @@ def listar_usuarios():
         text.insert("end", f"{u['nome']} {u['sobrenome']} - {u['email']} - {u['telefone']}\n")
 
 # =========================================================
-# Empréstimos com dropdown (customtkinter)
+# Empréstimos
 # =========================================================
 def form_emprestimo():
     limpar_conteudo()
@@ -218,7 +225,7 @@ def form_emprestimo():
     ctk.CTkButton(frameConteudo, text="Emprestar", width=200, command=salvar).pack(pady=15)
 
 # =========================================================
-# Devolução com dropdown (customtkinter)
+# Devolução
 # =========================================================
 def form_devolucao():
     limpar_conteudo()
@@ -284,15 +291,38 @@ def listar_emprestados():
             text.insert("end", f"{livro['titulo']} - {usuario['nome']} ({e['data_emprestimo']})\n")
 
 # =========================================================
-# Botões do menu
+# Histórico de empréstimos
 # =========================================================
-criar_botao_menu("Novo Usuário", form_novo_usuario, "adicionar_usuario.png")
-criar_botao_menu("Novo Livro", form_novo_livro, "adicionar.png")
-criar_botao_menu("Exibir Todos os Livros", listar_livros, "livros_na_biblioteca.png")
-criar_botao_menu("Exibir Todos os Usuários", listar_usuarios, "usuarios.png")
-criar_botao_menu("Realizar Empréstimo", form_emprestimo, "emprestar.png")
-criar_botao_menu("Devolução de Empréstimos", form_devolucao, "devolver.png")
-criar_botao_menu("Livros Emprestados", listar_emprestados, "livro_emprestado.png")
+def exibir_historico():
+    limpar_conteudo()
+    Label(frameConteudo, text="Histórico de Empréstimos", font=("Arial", 14, "bold"), bg=co_branco).pack(pady=15)
+    text = Text(frameConteudo, width=70, height=20)
+    text.pack(padx=10, pady=5)
+    scroll = Scrollbar(frameConteudo, command=text.yview)
+    scroll.pack(side="right", fill=Y)
+    text.config(yscrollcommand=scroll.set)
+
+    emprestimos = list(colecao_emprestimos.find())
+    if not emprestimos:
+        text.insert("end", "Nenhum histórico de empréstimos.\n")
+    else:
+        for e in emprestimos:
+            livro = colecao_livros.find_one({"_id": e["id_livro"]})
+            usuario = colecao_usuarios.find_one({"_id": e["id_usuario"]})
+            devolucao = e["data_devolucao"] or "Ainda não devolvido"
+            text.insert("end", f"{livro['titulo']} - {usuario['nome']} ({e['data_emprestimo']}) → {devolucao}\n")
+
+# =========================================================
+# Botões do menu (CTkButton)
+# =========================================================
+criar_botao_menu_ctk("Novo Usuário", form_novo_usuario, "adicionar_usuario.png")
+criar_botao_menu_ctk("Novo Livro", form_novo_livro, "adicionar.png")
+criar_botao_menu_ctk("Exibir Todos os Livros", listar_livros, "livros_na_biblioteca.png")
+criar_botao_menu_ctk("Exibir Todos os Usuários", listar_usuarios, "usuarios.png")
+criar_botao_menu_ctk("Realizar Empréstimo", form_emprestimo, "emprestar.png")
+criar_botao_menu_ctk("Devolução de Empréstimos", form_devolucao, "devolver.png")
+criar_botao_menu_ctk("Livros Emprestados", listar_emprestados, "livro_emprestado.png")
+criar_botao_menu_ctk("Histórico", exibir_historico, "historico.png")
 
 # =========================================================
 # Rodar app
