@@ -1,124 +1,120 @@
-# arquivo: dados.py
+# dados.py - Funções de acesso a dados usando MongoDB
+# Desenvolvido para um sistema de biblioteca
+# =========================================================
+
 from pymongo import MongoClient
-from bson.objectid import ObjectId
 from datetime import datetime
 
-# --- Conexão com o MongoDB ---
-def connect():
-    """
-    Retorna a conexão com o banco de dados 'biblioteca'.
-    """
-    client = MongoClient("mongodb://localhost:27017/")
-    db = client["biblioteca"]
-    return db
+# =========================================================
+# Conexão com MongoDB
+# =========================================================
+# Substitua "biblioteca" pelo nome do seu banco
+client = MongoClient("mongodb://localhost:27017/")
+db = client["biblioteca"]
 
-# --- CRUD Livros ---
-def insert_book(titulo, autor, editora, ano_publicacao, isbn):
-    """
-    Insere um livro no banco de dados.
-    Retorna o ID do livro inserido.
-    """
-    db = connect()
-    try:
-        ano_publicacao = int(ano_publicacao)
-    except ValueError:
-        raise ValueError("Ano de publicação deve ser um número inteiro")
-    livro = {
-        "titulo": titulo,
-        "autor": autor,
-        "editora": editora,
-        "ano_publicacao": ano_publicacao,
-        "isbn": isbn
-    }
-    return db.livros.insert_one(livro).inserted_id
+# Coleções
+USUARIOS = db["usuarios"]
+LIVROS = db["livros"]
+EMPRESTIMOS = db["emprestimos"]
+VENDAS = db["vendas"]
 
-def list_books():
-    """
-    Retorna todos os livros cadastrados.
-    """
-    db = connect()
-    return list(db.livros.find())
-
-def find_books_by_title(titulo):
-    """
-    Busca livros pelo título (busca parcial, case-insensitive).
-    """
-    db = connect()
-    return list(db.livros.find({"titulo": {"$regex": titulo, "$options": "i"}}))
-
-# --- CRUD Usuários ---
-def insert_user(nome, sobrenome, endereco, email, telefone):
-    """
-    Insere um usuário no banco de dados.
-    Retorna o ID do usuário inserido.
-    """
-    db = connect()
-    usuario = {
+# =========================================================
+# ---------- Usuários ----------
+# =========================================================
+def insert_user(nome, sobrenome, email, telefone):
+    """Adiciona um novo usuário ao banco"""
+    USUARIOS.insert_one({
         "nome": nome,
         "sobrenome": sobrenome,
-        "endereco": endereco,
         "email": email,
         "telefone": telefone
-    }
-    return db.usuarios.insert_one(usuario).inserted_id
+    })
 
 def list_users():
-    """
-    Retorna todos os usuários cadastrados.
-    """
-    db = connect()
-    return list(db.usuarios.find())
+    """Retorna todos os usuários"""
+    return list(USUARIOS.find())
 
-def find_users_by_name(nome):
-    """
-    Busca usuários pelo nome (busca parcial, case-insensitive).
-    """
-    db = connect()
-    return list(db.usuarios.find({"nome": {"$regex": nome, "$options": "i"}}))
+def update_user(user_id, dados):
+    """Atualiza os dados do usuário pelo _id"""
+    USUARIOS.update_one({"_id": user_id}, {"$set": dados})
 
-# --- CRUD Empréstimos ---
-def insert_loan(id_livro, id_usuario):
+def find_user(registro):
     """
-    Registra um empréstimo de livro para usuário.
-    Retorna o ID do empréstimo.
+    Busca usuário a partir de um empréstimo ou venda
+    registro: dicionário que contém "id_usuario"
     """
-    db = connect()
-    emprestimo = {
-        "id_livro": ObjectId(id_livro),
-        "id_usuario": ObjectId(id_usuario),
-        "data_emprestimo": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "data_devolucao": None
-    }
-    return db.emprestimos.insert_one(emprestimo).inserted_id
+    user_id = registro.get("id_usuario")
+    if user_id:
+        return USUARIOS.find_one({"_id": user_id})
+    return None
+
+# =========================================================
+# ---------- Livros ----------
+# =========================================================
+def insert_book(titulo, autor, ano_publicacao, isbn, quantidade=1, preco=0):
+    """Adiciona um novo livro ao banco"""
+    LIVROS.insert_one({
+        "titulo": titulo,
+        "autor": autor,
+        "ano_publicacao": ano_publicacao,
+        "isbn": isbn,
+        "quantidade": quantidade,
+        "preco": preco
+    })
+
+def list_books():
+    """Retorna todos os livros"""
+    return list(LIVROS.find())
+
+def update_book(book_id, dados):
+    """Atualiza os dados do livro pelo _id"""
+    LIVROS.update_one({"_id": book_id}, {"$set": dados})
+
+def find_book(registro):
+    """
+    Busca livro a partir de um empréstimo ou venda
+    registro: dicionário que contém "id_livro"
+    """
+    book_id = registro.get("id_livro")
+    if book_id:
+        return LIVROS.find_one({"_id": book_id})
+    return None
+
+# =========================================================
+# ---------- Empréstimos ----------
+# =========================================================
+def insert_loan(book_id, user_id):
+    """Registra um novo empréstimo"""
+    EMPRESTIMOS.insert_one({
+        "id_livro": book_id,
+        "id_usuario": user_id,
+        "data_emprestimo": datetime.now(),
+        "ativo": True
+    })
 
 def list_loans(active_only=False):
-    """
-    Lista todos os empréstimos.
-    Se active_only=True, retorna apenas os não devolvidos.
-    """
-    db = connect()
+    """Retorna todos os empréstimos ou apenas os ativos"""
     if active_only:
-        return list(db.emprestimos.find({"data_devolucao": None}))
-    return list(db.emprestimos.find())
+        return list(EMPRESTIMOS.find({"ativo": True}))
+    return list(EMPRESTIMOS.find())
 
 def return_loan(loan_id):
-    """
-    Registra a devolução de um empréstimo pelo ID.
-    Retorna True se o empréstimo foi atualizado, False caso contrário.
-    """
-    db = connect()
-    loan_obj = ObjectId(loan_id)
-    result = db.emprestimos.update_one(
-        {"_id": loan_obj, "data_devolucao": None},
-        {"$set": {"data_devolucao": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}}
-    )
-    return result.modified_count > 0
+    """Marca um empréstimo como devolvido"""
+    EMPRESTIMOS.update_one({"_id": loan_id}, {"$set": {"ativo": False}})
 
-def find_loans_by_book_title(titulo):
-    """
-    Lista todos os empréstimos ativos de livros que contenham o título pesquisado.
-    """
-    db = connect()
-    livros = db.livros.find({"titulo": {"$regex": titulo, "$options": "i"}})
-    livros_ids = [livro["_id"] for livro in livros]
-    return list(db.emprestimos.find({"id_livro": {"$in": livros_ids}, "data_devolucao": None}))
+# =========================================================
+# ---------- Vendas ----------
+# =========================================================
+def insert_sale(book_id, user_id, quantidade=1, preco=0):
+    """Registra uma venda"""
+    VENDAS.insert_one({
+        "id_livro": book_id,
+        "id_usuario": user_id,
+        "quantidade": quantidade,
+        "preco": preco,
+        "data_venda": datetime.now()
+    })
+
+def list_sales():
+    """Retorna todas as vendas"""
+    return list(VENDAS.find())
