@@ -1,330 +1,553 @@
+# tela.py - Sistema de Biblioteca completo
+# ------------------------------------------------------------------
+
 import os
 from tkinter import *
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 from PIL import Image, ImageTk
-from pymongo import MongoClient
 from datetime import datetime
+import requests
+from io import BytesIO
 import customtkinter as ctk
 
-# =========================================================
-# 🔗 Conexão com MongoDB
-# =========================================================
-client = MongoClient("mongodb://localhost:27017/")
-db = client["biblioteca"]
-colecao_livros = db["livros"]
-colecao_usuarios = db["usuarios"]
-colecao_emprestimos = db["emprestimos"]
+# importa funções de dados e view (presume-se que dados.py e view.py estão corretos)
+from dados import *
+from view import exibir_tabela
 
 # =========================================================
-# 🎨 Cores
+# Configurações visuais e janela principal
 # =========================================================
-co_branco = "#FEFEFE"
-co_preto = "#1C1C1C"
-co_verde = "#4FA882"
-co_vermelho = "#E74C3C"
-co_azul = "#3498DB"
-co_degrade_topo = "#2980B9"
+CO_BRANCO = "#FEFEFE"
+CO_PRETO = "#1C1C1C"
+CO_AZUL = "#3498DB"
+CO_VERDE = "#4FA882"
+CO_AZUL_MARINHO = "#001F3F"
+CO_AZUL_ROYAL = "#4169E1"
+CO_DEGRADE_TOPO = "#2980B9"
 
-# =========================================================
-# 🪟 Janela
-# =========================================================
 janela = Tk()
 janela.title("Sistema de Biblioteca")
-janela.geometry("900x550")
-janela.configure(bg=co_branco)
+janela.geometry("1000x600")
+janela.configure(bg=CO_BRANCO)
 janela.resizable(False, False)
-
-# Layout grid
 janela.grid_columnconfigure(0, weight=0)
 janela.grid_columnconfigure(1, weight=1)
 janela.grid_rowconfigure(0, weight=0)
 janela.grid_rowconfigure(1, weight=1)
 
 # =========================================================
-# 🧱 Frames
+# Frames (topo, menu lateral, conteúdo)
 # =========================================================
-frameTopo = Frame(janela, bg=co_degrade_topo, height=60)
+frameTopo = Frame(janela, bg=CO_DEGRADE_TOPO, height=70)
 frameTopo.grid(row=0, column=0, columnspan=2, sticky="nsew")
 
-frameMenu = Frame(janela, bg=co_preto, width=200)
+frameMenu = Frame(janela, bg=CO_AZUL_MARINHO, width=220)
 frameMenu.grid(row=1, column=0, sticky="ns")
 frameMenu.grid_propagate(False)
 
-frameConteudo = Frame(janela, bg=co_branco)
+frameConteudo = Frame(janela, bg=CO_BRANCO)
 frameConteudo.grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
 
 # =========================================================
-# Logo e título
+# Carregamento de ícones locais (pasta 'icones')
 # =========================================================
-try:
-    img_logo = Image.open("icones/cabecalho.png").resize((40, 40))
-    img_logo = ImageTk.PhotoImage(img_logo)
-    Label(frameTopo, image=img_logo, bg=co_degrade_topo).pack(side="left", padx=10, pady=10)
-except:
-    pass
+_image_cache = {}  # manter referência para evitar coleta do Tk
 
-Label(frameTopo, text="Sistema de Biblioteca", font=("Arial", 20, "bold"),
-      fg=co_branco, bg=co_degrade_topo).pack(side="left", pady=15)
-
-# =========================================================
-# Funções auxiliares
-# =========================================================
-def limpar_conteudo():
-    for w in frameConteudo.winfo_children():
-        w.destroy()
-
-def carregar_icone(nome_arquivo, tamanho=(24, 24)):
-    path = os.path.join("icones", nome_arquivo)
+def carregar_icone_local(nome, tamanho=(40, 40)):
+    """Carrega um ícone da pasta 'icones' e retorna PhotoImage (ou None)."""
+    path = os.path.join("icones", nome)
     if os.path.exists(path):
         try:
             img = Image.open(path).resize(tamanho)
-            return ImageTk.PhotoImage(img)
-        except:
+            photo = ImageTk.PhotoImage(img)
+            _image_cache[nome] = photo
+            return photo
+        except Exception:
             return None
     return None
 
-def criar_botao_menu_ctk(texto, comando, icone_arquivo=None):
-    img = carregar_icone(icone_arquivo) if icone_arquivo else None
-    btn = ctk.CTkButton(
-        frameMenu,
-        text=texto,
-        image=img,
-        compound="left",
-        fg_color=co_preto,
-        text_color=co_branco,
-        hover_color=co_azul,
-        width=180,
-        command=comando
-    )
-    btn.image = img
-    # Alinha todos os botões à esquerda
-    btn.pack(fill="x", pady=5, padx=0, anchor="w")
+# cabeçalho (logo + título)
+img_logo = carregar_icone_local("cabecalho.png")
+if img_logo:
+    Label(frameTopo, image=img_logo, bg=CO_DEGRADE_TOPO).pack(side="left", padx=12, pady=10)
+
+Label(frameTopo, text="Sistema de Biblioteca", font=("Arial", 20, "bold"),
+      fg=CO_BRANCO, bg=CO_DEGRADE_TOPO).pack(side="left", pady=15)
+
+# =========================================================
+# Utilitários gerais
+# =========================================================
+def limpar_conteudo():
+    """Remove todos os widgets do frame de conteúdo."""
+    for w in frameConteudo.winfo_children():
+        w.destroy()
+
+def criar_botao_menu(texto, comando, icone_nome=None):
+    """Cria um botão no menu lateral com possível ícone."""
+    img = None
+    if icone_nome:
+        img = carregar_icone_local(icone_nome, (24, 24))
+    if img:
+        btn = Button(frameMenu, text="  " + texto, image=img, compound=LEFT, anchor="w",
+                     bg=CO_AZUL_ROYAL, fg=CO_BRANCO, font=("Arial", 10, "bold"),
+                     relief="flat", command=comando)
+        btn.image = img
+    else:
+        btn = Button(frameMenu, text=texto, bg=CO_AZUL_ROYAL, fg=CO_BRANCO,
+                     font=("Arial", 10, "bold"), relief="flat", anchor="w", command=comando)
+    btn.pack(fill="x", pady=6, padx=8)
+    btn.bind("<Enter>", lambda e: btn.config(bg=CO_AZUL))
+    btn.bind("<Leave>", lambda e: btn.config(bg=CO_AZUL_ROYAL))
     return btn
 
 # =========================================================
-# Cadastro de Usuários
+# Google Books (busca de metadados e thumbnail)
+# =========================================================
+def buscar_google_books(titulo='', isbn=''):
+    """Consulta Google Books (retorna dicionário com titulo, autores, ano, thumbnail, descricao)."""
+    try:
+        q = f"isbn:{isbn}" if isbn else f"intitle:{titulo}"
+        url = "https://www.googleapis.com/books/v1/volumes"
+        resp = requests.get(url, params={"q": q, "maxResults": 5}, timeout=8)
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("items")
+        if not items:
+            return None
+        vi = items[0].get("volumeInfo", {})
+        titulo_api = vi.get("title","")
+        autores = ", ".join(vi.get("authors",[])) if vi.get("authors") else ""
+        published = vi.get("publishedDate","")
+        ano = published.split("-")[0] if published else ""
+        thumbnail = vi.get("imageLinks",{}).get("thumbnail")
+        descricao = vi.get("description","") or ""
+        return {"titulo":titulo_api,"autores":autores,"ano":ano,"thumbnail":thumbnail,"descricao":descricao}
+    except Exception as e:
+        print("Erro Google Books:", e)
+        return None
+
+def baixar_imagem_url(url, tamanho=(140,200)):
+    """Baixa imagem de URL e converte para PhotoImage (cache)."""
+    try:
+        r = requests.get(url, timeout=8)
+        r.raise_for_status()
+        img = Image.open(BytesIO(r.content)).resize(tamanho)
+        photo = ImageTk.PhotoImage(img)
+        _image_cache[url] = photo
+        return photo
+    except Exception:
+        return None
+
+# =========================================================
+# ---------- Usuários ----------
 # =========================================================
 def form_novo_usuario():
+    """Formulário para cadastrar novo usuário."""
     limpar_conteudo()
-    Label(frameConteudo, text="Novo Usuário", font=("Arial", 14, "bold"), bg=co_branco).pack(pady=15)
-    frm = Frame(frameConteudo, bg=co_branco); frm.pack(pady=10)
+    Label(frameConteudo, text="Novo Usuário", font=("Arial",14,"bold"), bg=CO_BRANCO).pack(pady=10)
+    frm = Frame(frameConteudo,bg=CO_BRANCO); frm.pack(pady=6)
 
-    campos = [("Nome:", "nome"), ("Sobrenome:", "sobrenome"), ("Email:", "email"), ("Telefone:", "telefone")]
-    entradas = {}
-    for i, (lbl, key) in enumerate(campos):
-        Label(frm, text=lbl, bg=co_branco).grid(row=i, column=0, sticky="e", padx=5, pady=5)
-        entradas[key] = Entry(frm, width=40)
-        entradas[key].grid(row=i, column=1, padx=5, pady=5)
+    Label(frm,text="Nome:",bg=CO_BRANCO).grid(row=0,column=0,sticky="e",padx=5)
+    Label(frm,text="Sobrenome:",bg=CO_BRANCO).grid(row=1,column=0,sticky="e",padx=5)
+    Label(frm,text="Email:",bg=CO_BRANCO).grid(row=2,column=0,sticky="e",padx=5)
+    Label(frm,text="Telefone:",bg=CO_BRANCO).grid(row=3,column=0,sticky="e",padx=5)
+
+    e_nome = Entry(frm,width=42); e_nome.grid(row=0,column=1)
+    e_sob = Entry(frm,width=42); e_sob.grid(row=1,column=1)
+    e_email = Entry(frm,width=42); e_email.grid(row=2,column=1)
+    e_tel = Entry(frm,width=42); e_tel.grid(row=3,column=1)
 
     def salvar():
-        if any(not entradas[k].get().strip() for k in entradas):
-            messagebox.showwarning("Erro", "Preencha todos os campos!")
-            return
-        colecao_usuarios.insert_one({k: entradas[k].get().strip() for k in entradas})
-        messagebox.showinfo("Sucesso", f"Usuário '{entradas['nome'].get()}' cadastrado!")
-        form_novo_usuario()
+        nome = e_nome.get().strip(); sobrenome = e_sob.get().strip()
+        email = e_email.get().strip(); telefone = e_tel.get().strip()
+        if not nome or not sobrenome or not email or not telefone:
+            messagebox.showwarning("Erro","Preencha todos os campos!"); return
+        insert_user(nome,sobrenome,email,telefone)
+        messagebox.showinfo("Sucesso",f"Usuário '{nome}' cadastrado!"); form_novo_usuario()
 
-    ctk.CTkButton(frameConteudo, text="Cadastrar", fg_color=co_verde, command=salvar).pack(pady=10)
+    Button(frameConteudo,text="Cadastrar",bg=CO_VERDE,fg=CO_BRANCO,width=18,command=salvar).pack(pady=10)
 
-# =========================================================
-# Cadastro de Livros
-# =========================================================
-def form_novo_livro():
+def form_alterar_usuario():
+    """Formulário para alterar usuário existente."""
     limpar_conteudo()
-    Label(frameConteudo, text="Novo Livro", font=("Arial", 14, "bold"), bg=co_branco).pack(pady=15)
-    frm = Frame(frameConteudo, bg=co_branco); frm.pack(pady=10)
+    Label(frameConteudo,text="Alterar Usuário",font=("Arial",14,"bold"),bg=CO_BRANCO).pack(pady=10)
+    usuarios = list_users()
+    if not usuarios:
+        Label(frameConteudo,text="Nenhum usuário cadastrado.",bg=CO_BRANCO).pack(); return
+    sel = ctk.CTkOptionMenu(frameConteudo, values=[u["nome"] for u in usuarios], width=400)
+    sel.pack(pady=6)
+    frm = Frame(frameConteudo,bg=CO_BRANCO); frm.pack(pady=6)
+    Label(frm,text="Nome:",bg=CO_BRANCO).grid(row=0,column=0,sticky="e",padx=5)
+    Label(frm,text="Sobrenome:",bg=CO_BRANCO).grid(row=1,column=0,sticky="e",padx=5)
+    Label(frm,text="Email:",bg=CO_BRANCO).grid(row=2,column=0,sticky="e",padx=5)
+    Label(frm,text="Telefone:",bg=CO_BRANCO).grid(row=3,column=0,sticky="e",padx=5)
 
-    campos = [("Título:", "titulo"), ("Autor:", "autor"), ("Ano de Publicação:", "ano"), ("ISBN:", "isbn")]
-    entradas = {}
-    for i, (lbl, key) in enumerate(campos):
-        Label(frm, text=lbl, bg=co_branco).grid(row=i, column=0, sticky="e", padx=5, pady=5)
-        entradas[key] = Entry(frm, width=40)
-        entradas[key].grid(row=i, column=1, padx=5, pady=5)
+    e_nome = Entry(frm,width=42); e_nome.grid(row=0,column=1)
+    e_sob = Entry(frm,width=42); e_sob.grid(row=1,column=1)
+    e_email = Entry(frm,width=42); e_email.grid(row=2,column=1)
+    e_tel = Entry(frm,width=42); e_tel.grid(row=3,column=1)
 
-    def salvar():
-        if any(not entradas[k].get().strip() for k in entradas):
-            messagebox.showwarning("Erro", "Preencha todos os campos!")
-            return
+    def carregar_usuario(*_):
+        # procura pelo nome selecionado (se houver duplicidade, pega o primeiro)
         try:
-            entradas["ano"] = int(entradas["ano"].get())
-        except:
-            messagebox.showwarning("Erro", "Ano deve ser um número!")
+            u = next(x for x in usuarios if x.get("nome") == sel.get())
+        except StopIteration:
             return
-        colecao_livros.insert_one({
-            "titulo": entradas["titulo"].get(),
-            "autor": entradas["autor"].get(),
-            "ano_publicacao": entradas["ano"],
-            "isbn": entradas["isbn"].get()
-        })
-        messagebox.showinfo("Sucesso", f"Livro '{entradas['titulo'].get()}' cadastrado!")
-        form_novo_livro()
+        sel.usuario_atual = u.get("_id")
+        e_nome.delete(0,END); e_nome.insert(0,u.get("nome",""))
+        e_sob.delete(0,END); e_sob.insert(0,u.get("sobrenome",""))
+        e_email.delete(0,END); e_email.insert(0,u.get("email",""))
+        e_tel.delete(0,END); e_tel.insert(0,u.get("telefone",""))
 
-    ctk.CTkButton(frameConteudo, text="Cadastrar", fg_color=co_verde, command=salvar).pack(pady=10)
+    sel.configure(command=carregar_usuario)
 
-# =========================================================
-# Listagem de livros e usuários
-# =========================================================
-def listar_livros():
-    limpar_conteudo()
-    Label(frameConteudo, text="Todos os Livros", font=("Arial", 14, "bold"), bg=co_branco).pack(pady=10)
-    text = Text(frameConteudo, width=70, height=20); text.pack(padx=10, pady=5)
-    scroll = Scrollbar(frameConteudo, command=text.yview); scroll.pack(side="right", fill=Y)
-    text.config(yscrollcommand=scroll.set)
-    for l in colecao_livros.find():
-        text.insert("end", f"{l['titulo']} - {l['autor']} ({l['ano_publicacao']}) ISBN: {l['isbn']}\n")
+    def salvar():
+        if not hasattr(sel,"usuario_atual"): return
+        dados = {"nome": e_nome.get().strip(),"sobrenome": e_sob.get().strip(),
+                 "email": e_email.get().strip(),"telefone": e_tel.get().strip()}
+        update_user(sel.usuario_atual,dados)
+        messagebox.showinfo("Sucesso","Usuário atualizado!"); form_alterar_usuario()
+
+    Button(frameConteudo,text="Salvar Alterações",bg=CO_VERDE,fg=CO_BRANCO,width=18,command=salvar).pack(pady=10)
 
 def listar_usuarios():
+    """Mostra todos os usuários em tabela (usa view.exibir_tabela)."""
     limpar_conteudo()
-    Label(frameConteudo, text="Todos os Usuários", font=("Arial", 14, "bold"), bg=co_branco).pack(pady=10)
-    text = Text(frameConteudo, width=70, height=20); text.pack(padx=10, pady=5)
-    scroll = Scrollbar(frameConteudo, command=text.yview); scroll.pack(side="right", fill=Y)
-    text.config(yscrollcommand=scroll.set)
-    for u in colecao_usuarios.find():
-        text.insert("end", f"{u['nome']} {u['sobrenome']} - {u['email']} - {u['telefone']}\n")
+    dados = list_users()
+    if not dados:
+        Label(frameConteudo,text="Nenhum usuário cadastrado.",bg=CO_BRANCO).pack(); return
+    colunas = ["nome","sobrenome","email","telefone"]
+    exibir_tabela(frameConteudo,colunas,dados)
 
 # =========================================================
-# Empréstimos
+# ---------- Livros ----------
 # =========================================================
-def form_emprestimo():
+def form_novo_livro():
+    """Formulário para cadastrar novo livro e opção de buscar capa no Google."""
     limpar_conteudo()
-    Label(frameConteudo, text="Realizar Empréstimo", font=("Arial", 14, "bold"), bg=co_branco).pack(pady=15)
-    frm = ctk.CTkFrame(frameConteudo, fg_color="white")
-    frm.pack(pady=10, padx=10, fill="x")
+    Label(frameConteudo,text="Novo Livro",font=("Arial",14,"bold"),bg=CO_BRANCO).pack(pady=10)
+    frm = Frame(frameConteudo,bg=CO_BRANCO); frm.pack(pady=6, fill="x")
+    Label(frm,text="Título:",bg=CO_BRANCO).grid(row=0,column=0,sticky="e",padx=5)
+    Label(frm,text="Autor:",bg=CO_BRANCO).grid(row=1,column=0,sticky="e",padx=5)
+    Label(frm,text="Ano:",bg=CO_BRANCO).grid(row=2,column=0,sticky="e",padx=5)
+    Label(frm,text="ISBN:",bg=CO_BRANCO).grid(row=3,column=0,sticky="e",padx=5)
+    Label(frm,text="Quantidade:",bg=CO_BRANCO).grid(row=4,column=0,sticky="e",padx=5)
+    Label(frm,text="Preço:",bg=CO_BRANCO).grid(row=5,column=0,sticky="e",padx=5)
 
-    livros_lista = [l["titulo"] for l in colecao_livros.find()] or [""]
-    usuarios_lista = [u["nome"] for u in colecao_usuarios.find()] or [""]
+    e_titulo = Entry(frm,width=42); e_titulo.grid(row=0,column=1)
+    e_autor = Entry(frm,width=42); e_autor.grid(row=1,column=1)
+    e_ano = Entry(frm,width=42); e_ano.grid(row=2,column=1)
+    e_isbn = Entry(frm,width=42); e_isbn.grid(row=3,column=1)
+    e_qtd = Entry(frm,width=42); e_qtd.grid(row=4,column=1)
+    e_preco = Entry(frm,width=42); e_preco.grid(row=5,column=1)
 
-    # Dropdown Livro
-    Label(frm, text="Livro:", bg="white").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-    livro_dropdown = ctk.CTkOptionMenu(frm, values=livros_lista, width=300)
-    livro_dropdown.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+    lbl_capa = Label(frm,bg=CO_BRANCO)
+    lbl_capa.grid(row=0,column=2,rowspan=6,padx=10)
 
-    # Dropdown Usuário
-    Label(frm, text="Usuário:", bg="white").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-    usuario_dropdown = ctk.CTkOptionMenu(frm, values=usuarios_lista, width=300)
-    usuario_dropdown.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+    def mostrar_capa():
+        info = buscar_google_books(titulo=e_titulo.get().strip(), isbn=e_isbn.get().strip())
+        if info and info.get("thumbnail"):
+            im = baixar_imagem_url(info["thumbnail"])
+            if im:
+                lbl_capa.config(image=im); lbl_capa.image = im
+
+    Button(frm,text="Google Livro",bg=CO_AZUL,fg=CO_BRANCO,command=mostrar_capa).grid(row=6,column=1,pady=6,sticky="w")
 
     def salvar():
-        livro = colecao_livros.find_one({"titulo": {"$regex": livro_dropdown.get(), "$options": "i"}})
-        usuario = colecao_usuarios.find_one({"nome": {"$regex": usuario_dropdown.get(), "$options": "i"}})
-        if not livro or not usuario:
-            messagebox.showwarning("Erro", "Livro ou usuário não encontrado!")
-            return
-        if colecao_emprestimos.find_one({"id_livro": livro["_id"], "data_devolucao": None}):
-            messagebox.showwarning("Aviso", "Este livro já está emprestado.")
-            return
-        colecao_emprestimos.insert_one({
-            "id_livro": livro["_id"],
-            "id_usuario": usuario["_id"],
-            "data_emprestimo": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "data_devolucao": None
-        })
-        messagebox.showinfo("Sucesso", f"Livro '{livro['titulo']}' emprestado para {usuario['nome']}!")
-        form_emprestimo()
+        try:
+            insert_book(e_titulo.get().strip(), e_autor.get().strip(), e_ano.get().strip(),
+                        e_isbn.get().strip(), quantidade=int(e_qtd.get() or 1), preco=e_preco.get())
+            messagebox.showinfo("Sucesso","Livro cadastrado!"); form_novo_livro()
+        except Exception as ex:
+            messagebox.showerror("Erro", str(ex))
 
-    ctk.CTkButton(frameConteudo, text="Emprestar", width=200, command=salvar).pack(pady=15)
+    Button(frameConteudo,text="Cadastrar",bg=CO_VERDE,fg=CO_BRANCO,width=18,command=salvar).pack(pady=10)
 
-# =========================================================
-# Devolução
-# =========================================================
-def form_devolucao():
+def form_alterar_livro():
+    """Formulário para alterar livro (com busca de capa também)."""
     limpar_conteudo()
-    Label(frameConteudo, text="Devolução de Empréstimos", font=("Arial", 14, "bold"), bg=co_branco).pack(pady=15)
-    frm = ctk.CTkFrame(frameConteudo, fg_color="white")
-    frm.pack(pady=10, padx=10, fill="x")
+    Label(frameConteudo,text="Alterar Livro",font=("Arial",14,"bold"),bg=CO_BRANCO).pack(pady=10)
+    livros = list_books()
+    if not livros:
+        Label(frameConteudo,text="Nenhum livro cadastrado.",bg=CO_BRANCO).pack(); return
+    sel = ctk.CTkOptionMenu(frameConteudo, values=[l["titulo"] for l in livros], width=400)
+    sel.pack(pady=6)
+    frm = Frame(frameConteudo,bg=CO_BRANCO); frm.pack(pady=6)
+    Label(frm,text="Título:",bg=CO_BRANCO).grid(row=0,column=0,sticky="e",padx=5)
+    Label(frm,text="Autor:",bg=CO_BRANCO).grid(row=1,column=0,sticky="e",padx=5)
+    Label(frm,text="Ano:",bg=CO_BRANCO).grid(row=2,column=0,sticky="e",padx=5)
+    Label(frm,text="ISBN:",bg=CO_BRANCO).grid(row=3,column=0,sticky="e",padx=5)
+    Label(frm,text="Quantidade:",bg=CO_BRANCO).grid(row=4,column=0,sticky="e",padx=5)
+    Label(frm,text="Preço:",bg=CO_BRANCO).grid(row=5,column=0,sticky="e",padx=5)
 
-    emprestimos_ativos = list(colecao_emprestimos.find({"data_devolucao": None}))
+    e_titulo = Entry(frm,width=42); e_titulo.grid(row=0,column=1)
+    e_autor = Entry(frm,width=42); e_autor.grid(row=1,column=1)
+    e_ano = Entry(frm,width=42); e_ano.grid(row=2,column=1)
+    e_isbn = Entry(frm,width=42); e_isbn.grid(row=3,column=1)
+    e_qtd = Entry(frm,width=42); e_qtd.grid(row=4,column=1)
+    e_preco = Entry(frm,width=42); e_preco.grid(row=5,column=1)
+
+    lbl_capa = Label(frm,bg=CO_BRANCO)
+    lbl_capa.grid(row=0,column=2,rowspan=6,padx=10)
+
+    def carregar_livro(*_):
+        try:
+            l = next(x for x in livros if x.get("titulo")==sel.get())
+        except StopIteration:
+            return
+        sel.livro_atual = l.get("_id")
+        e_titulo.delete(0,END); e_titulo.insert(0,l.get("titulo",""))
+        e_autor.delete(0,END); e_autor.insert(0,l.get("autor",""))
+        e_ano.delete(0,END); e_ano.insert(0,l.get("ano_publicacao",""))
+        e_isbn.delete(0,END); e_isbn.insert(0,l.get("isbn",""))
+        e_qtd.delete(0,END); e_qtd.insert(0,l.get("quantidade",1))
+        e_preco.delete(0,END); e_preco.insert(0,l.get("preco",""))
+
+    sel.configure(command=carregar_livro)
+
+    def mostrar_capa():
+        info = buscar_google_books(titulo=e_titulo.get().strip(), isbn=e_isbn.get().strip())
+        if info and info.get("thumbnail"):
+            im = baixar_imagem_url(info["thumbnail"])
+            if im:
+                lbl_capa.config(image=im); lbl_capa.image = im
+
+    Button(frm,text="Google Livro",bg=CO_AZUL,fg=CO_BRANCO,command=mostrar_capa).grid(row=6,column=1,pady=6,sticky="w")
+
+    def salvar():
+        if not hasattr(sel,"livro_atual"): return
+        dados = {"titulo": e_titulo.get().strip(),"autor": e_autor.get().strip(),
+                 "ano_publicacao": e_ano.get().strip(),"isbn": e_isbn.get().strip(),
+                 "quantidade": int(e_qtd.get() or 1),"preco": e_preco.get()}
+        update_book(sel.livro_atual,dados)
+        messagebox.showinfo("Sucesso","Livro atualizado!"); form_alterar_livro()
+
+    Button(frameConteudo,text="Salvar Alterações",bg=CO_VERDE,fg=CO_BRANCO,width=18,command=salvar).pack(pady=10)
+
+def listar_livros():
+    """Mostra todos os livros em tabela (usa view.exibir_tabela)."""
+    limpar_conteudo()
+    dados = list_books()
+    if not dados:
+        Label(frameConteudo,text="Nenhum livro cadastrado.",bg=CO_BRANCO).pack(); return
+    colunas = ["titulo","autor","ano_publicacao","isbn","quantidade","preco"]
+    exibir_tabela(frameConteudo,colunas,dados)
+
+# =========================================================
+# ---------- Empréstimos ----------
+# =========================================================
+def form_emprestimos():
+    limpar_conteudo()
+    Label(frameConteudo,text="Empréstimos",font=("Arial",14,"bold"),bg=CO_BRANCO).pack(pady=10)
+
+    livros = [l for l in list_books() if l.get("quantidade",0)>0]
+    usuarios = list_users()
+    if not livros or not usuarios:
+        Label(frameConteudo,text="Não há livros disponíveis ou usuários cadastrados.",bg=CO_BRANCO).pack(); return
+
+    sel_livro = ctk.CTkOptionMenu(frameConteudo, values=[l.get("titulo","") for l in livros], width=400)
+    sel_livro.pack(pady=6)
+    sel_usuario = ctk.CTkOptionMenu(frameConteudo, values=[u.get("nome","") for u in usuarios], width=400)
+    sel_usuario.pack(pady=6)
+
+    def salvar():
+        try:
+            l = next(x for x in livros if x.get("titulo")==sel_livro.get())
+            u = next(x for x in usuarios if x.get("nome")==sel_usuario.get())
+        except StopIteration:
+            messagebox.showwarning("Erro","Seleção inválida."); return
+
+        insert_loan(l["_id"], u["_id"])
+        update_book(l["_id"],{"quantidade": max(0, l.get("quantidade",0)-1)})
+        messagebox.showinfo("Sucesso","Empréstimo realizado!")
+        form_emprestimos()
+
+    Button(frameConteudo,text="Emprestar",bg=CO_VERDE,fg=CO_BRANCO,width=18,command=salvar).pack(pady=10)
+
+# =========================================================
+# ---------- Devoluções ----------
+# =========================================================
+def form_devolucoes():
+    """Lista empréstimos ativos válidos e permite registrar devolução (com data/hora)."""
+    limpar_conteudo()
+    Label(frameConteudo,text="Devoluções",font=("Arial",14,"bold"),bg=CO_BRANCO).pack(pady=10)
+
+    emprestimos_ativos = list_loans(active_only=True)
     if not emprestimos_ativos:
-        Label(frm, text="Nenhum empréstimo ativo.", bg="white").pack(pady=10)
-        return
+        Label(frameConteudo,text="Nenhum empréstimo ativo.",bg=CO_BRANCO).pack(); return
 
-    opcoes = []
+    valores = []
+    emprestimos_validos = []
+
+    # preparar lista ignorando registros incompletos
     for e in emprestimos_ativos:
-        l = colecao_livros.find_one({"_id": e["id_livro"]})
-        u = colecao_usuarios.find_one({"_id": e["id_usuario"]})
-        titulo = l.get("titulo", "(desconhecido)") if l else "(desconhecido)"
-        nome = u.get("nome", "(desconhecido)") if u else "(desconhecido)"
-        opcoes.append(f"{titulo} — {nome}")
+        book_id = e.get("id_livro")
+        user_id = e.get("id_usuario")
+        if not book_id or not user_id:
+            continue
+        l = find_book(book_id)
+        u = find_user(user_id)
+        if l and u:
+            valores.append(f"{l.get('titulo','(sem título)')} - {u.get('nome','(sem nome)')}")
+            emprestimos_validos.append(e)
 
-    selecionado_dropdown = ctk.CTkOptionMenu(frm, values=opcoes, width=400)
-    selecionado_dropdown.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-    Label(frm, text="Selecione empréstimo:", bg="white").grid(row=0,column=0, padx=5, pady=5)
+    if not valores:
+        Label(frameConteudo,text="Nenhum empréstimo válido para devolução.",bg=CO_BRANCO).pack(); return
+
+    sel = ctk.CTkOptionMenu(frameConteudo, values=valores, width=400); sel.pack(pady=6)
 
     def devolver():
+        escolha = sel.get()
         try:
-            titulo, nome = [s.strip() for s in selecionado_dropdown.get().split("—")]
-        except:
-            messagebox.showwarning("Erro", "Opção inválida.")
-            return
-        livro = colecao_livros.find_one({"titulo": {"$regex": titulo, "$options": "i"}})
-        usuario = colecao_usuarios.find_one({"nome": {"$regex": nome, "$options": "i"}})
-        if not livro or not usuario:
-            messagebox.showwarning("Erro", "Documento não encontrado.")
-            return
-        emprestimo = colecao_emprestimos.find_one({"id_livro": livro["_id"], "id_usuario": usuario["_id"], "data_devolucao": None})
-        if not emprestimo:
-            messagebox.showinfo("Info", "Empréstimo não encontrado ou já devolvido.")
-            return
-        colecao_emprestimos.update_one({"_id": emprestimo["_id"]}, {"$set": {"data_devolucao": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}})
-        messagebox.showinfo("Sucesso", f"Livro '{titulo}' devolvido por {nome}!")
-        form_devolucao()
+            idx = valores.index(escolha)
+        except ValueError:
+            messagebox.showwarning("Erro","Selecione um item válido."); return
+        e = emprestimos_validos[idx]
+        # registra devolução no banco (dados.return_loan já marca 'ativo': False; aqui
+        # assumimos que return_loan também grava data_devolucao se a função em dados.py foi atualizada)
+        return_loan(e["_id"])
 
-    ctk.CTkButton(frm, text="Registrar Devolução", width=200, command=devolver).grid(row=1,column=1, pady=10, sticky="w")
+        # atualizar quantidade do livro (se ainda existir)
+        book_id = e.get("id_livro")
+        livro = find_book(book_id)
+        if livro:
+            update_book(livro["_id"], {"quantidade": livro.get("quantidade",0)+1})
+
+        messagebox.showinfo("Sucesso","Devolução realizada!")
+        form_devolucoes()
+
+    Button(frameConteudo,text="Devolver",bg=CO_VERDE,fg=CO_BRANCO,width=18,command=devolver).pack(pady=10)
+
+    # Mostrar histórico de devoluções (últimos devolvidos)
+    Label(frameConteudo, text="Últimas Devoluções", font=("Arial",12,"bold"), bg=CO_BRANCO).pack(pady=(12,4))
+    tabela = ttk.Treeview(frameConteudo, columns=("Livro","Usuário","Data Empréstimo","Data Devolução"), show="headings", height=6)
+    tabela.heading("Livro", text="Livro"); tabela.heading("Usuário", text="Usuário")
+    tabela.heading("Data Empréstimo", text="Data Empréstimo"); tabela.heading("Data Devolução", text="Data Devolução")
+    tabela.pack(fill="x", pady=6)
+
+    # carregar todos empréstimos (inclui ativos e inativos) e filtrar devolvidos
+    todos = list_loans(active_only=False)
+    for emp in reversed(todos):  # mostrar do mais recente para o mais antigo
+        if not emp.get("data_devolucao"):
+            continue
+        book = find_book(emp.get("id_livro")); user = find_user(emp.get("id_usuario"))
+        if not book or not user:
+            continue
+        # formatar datas se forem datetime
+        de = emp.get("data_emprestimo")
+        dd = emp.get("data_devolucao")
+        if isinstance(de, datetime):
+            de_display = de.strftime("%d/%m/%Y %H:%M")
+        else:
+            de_display = str(de)
+        if isinstance(dd, datetime):
+            dd_display = dd.strftime("%d/%m/%Y %H:%M")
+        else:
+            dd_display = str(dd)
+        tabela.insert("", "end", values=(book.get("titulo"), user.get("nome"), de_display, dd_display))
 
 # =========================================================
-# Listar livros emprestados
+# ---------- Vendas ----------
 # =========================================================
-def listar_emprestados():
+def form_vendas():
     limpar_conteudo()
-    Label(frameConteudo, text="Livros Emprestados", font=("Arial", 14, "bold"), bg=co_branco).pack(pady=10)
-    text = Text(frameConteudo, width=70, height=20); text.pack(padx=10, pady=5)
-    scroll = Scrollbar(frameConteudo, command=text.yview); scroll.pack(side="right", fill=Y)
-    text.config(yscrollcommand=scroll.set)
+    Label(frameConteudo,text="Vendas",font=("Arial",14,"bold"),bg=CO_BRANCO).pack(pady=10)
 
-    emprestimos = list(colecao_emprestimos.find({"data_devolucao": None}))
-    if not emprestimos:
-        text.insert("end", "Nenhum livro emprestado no momento.\n")
-    else:
-        for e in emprestimos:
-            livro = colecao_livros.find_one({"_id": e["id_livro"]})
-            usuario = colecao_usuarios.find_one({"_id": e["id_usuario"]})
-            text.insert("end", f"{livro['titulo']} - {usuario['nome']} ({e['data_emprestimo']})\n")
+    livros = [l for l in list_books() if l.get("quantidade",0)>0]
+    usuarios = list_users()
+    if not livros or not usuarios:
+        Label(frameConteudo,text="Não há livros disponíveis ou usuários cadastrados.",bg=CO_BRANCO).pack(); return
+
+    sel_livro = ctk.CTkOptionMenu(frameConteudo, values=[l.get("titulo","") for l in livros], width=400); sel_livro.pack(pady=6)
+    sel_usuario = ctk.CTkOptionMenu(frameConteudo, values=[u.get("nome","") for u in usuarios], width=400); sel_usuario.pack(pady=6)
+    e_qtd = Entry(frameConteudo); e_qtd.pack(pady=6); e_qtd.insert(0,"1")
+
+    def vender():
+        try:
+            l = next(x for x in livros if x.get("titulo")==sel_livro.get())
+            u = next(x for x in usuarios if x.get("nome")==sel_usuario.get())
+        except StopIteration:
+            messagebox.showwarning("Erro","Seleção inválida."); return
+        qtd = int(e_qtd.get() or 1)
+        if qtd > l.get("quantidade",0):
+            messagebox.showwarning("Erro","Quantidade maior que disponível!"); return
+        insert_sale(l["_id"], u["_id"], quantidade=qtd, preco=l.get("preco"))
+        update_book(l["_id"], {"quantidade": l.get("quantidade",0)-qtd})
+        messagebox.showinfo("Sucesso","Venda realizada!"); form_vendas()
+
+    Button(frameConteudo,text="Vender",bg=CO_VERDE,fg=CO_BRANCO,width=18,command=vender).pack(pady=10)
 
 # =========================================================
-# Histórico de empréstimos
+# Histórico de Empréstimos
 # =========================================================
-def exibir_historico():
+def historico_emprestimos():
+    """Mostra histórico (todos) de empréstimos com tratamento de registros incompletos."""
     limpar_conteudo()
-    Label(frameConteudo, text="Histórico de Empréstimos", font=("Arial", 14, "bold"), bg=co_branco).pack(pady=15)
-    text = Text(frameConteudo, width=70, height=20)
-    text.pack(padx=10, pady=5)
-    scroll = Scrollbar(frameConteudo, command=text.yview)
-    scroll.pack(side="right", fill=Y)
-    text.config(yscrollcommand=scroll.set)
-
-    emprestimos = list(colecao_emprestimos.find())
-    if not emprestimos:
-        text.insert("end", "Nenhum histórico de empréstimos.\n")
-    else:
-        for e in emprestimos:
-            livro = colecao_livros.find_one({"_id": e["id_livro"]})
-            usuario = colecao_usuarios.find_one({"_id": e["id_usuario"]})
-            devolucao = e["data_devolucao"] or "Ainda não devolvido"
-            text.insert("end", f"{livro['titulo']} - {usuario['nome']} ({e['data_emprestimo']}) → {devolucao}\n")
-
-# =========================================================
-# Botões do menu (CTkButton)
-# =========================================================
-criar_botao_menu_ctk("Novo Usuário", form_novo_usuario, "adicionar_usuario.png")
-criar_botao_menu_ctk("Novo Livro", form_novo_livro, "adicionar.png")
-criar_botao_menu_ctk("Exibir Todos os Livros", listar_livros, "livros_na_biblioteca.png")
-criar_botao_menu_ctk("Exibir Todos os Usuários", listar_usuarios, "usuarios.png")
-criar_botao_menu_ctk("Realizar Empréstimo", form_emprestimo, "emprestar.png")
-criar_botao_menu_ctk("Devolução de Empréstimos", form_devolucao, "devolver.png")
-criar_botao_menu_ctk("Livros Emprestados", listar_emprestados, "livro_emprestado.png")
-criar_botao_menu_ctk("Histórico", exibir_historico, "historico.png")
+    Label(frameConteudo, text="Histórico de Empréstimos", font=("Arial",14,"bold"), bg=CO_BRANCO).pack(pady=10)
+    emprestimos = list_loans(active_only=False)
+    dados = []
+    for e in emprestimos:
+        # ignorar registros incompletos
+        if not e.get("id_livro") or not e.get("id_usuario"):
+            continue
+        l = find_book(e.get("id_livro")); u = find_user(e.get("id_usuario"))
+        if not l or not u:
+            continue
+        de = e.get("data_emprestimo")
+        dd = e.get("data_devolucao")
+        de_display = de.strftime("%d/%m/%Y %H:%M") if isinstance(de, datetime) else str(de or "")
+        dd_display = dd.strftime("%d/%m/%Y %H:%M") if isinstance(dd, datetime) else (str(dd) if dd else "Não devolvido")
+        dados.append({"Livro": l.get("titulo"), "Usuário": u.get("nome"), "Data Empréstimo": de_display, "Data Devolução": dd_display})
+    if not dados:
+        Label(frameConteudo, text="Nenhum histórico de empréstimos.", bg=CO_BRANCO).pack(); return
+    colunas = ["Livro","Usuário","Data Empréstimo","Data Devolução"]
+    exibir_tabela(frameConteudo,colunas,dados)
 
 # =========================================================
-# Rodar app
+# Histórico de Vendas
 # =========================================================
+def historico_vendas():
+    limpar_conteudo()
+    Label(frameConteudo,text="Histórico de Vendas",font=("Arial",14,"bold"),bg=CO_BRANCO).pack(pady=10)
+    vendas = list_sales()
+    dados = []
+    for v in vendas:
+        # validar estrutura
+        if not v.get("id_livro") or not v.get("id_usuario"):
+            continue
+        l = find_book(v.get("id_livro")); u = find_user(v.get("id_usuario"))
+        if not l or not u:
+            continue
+        dv = v.get("data_venda")
+        dv_display = dv.strftime("%d/%m/%Y %H:%M") if isinstance(dv, datetime) else str(dv or "")
+        dados.append({"Livro": l.get("titulo"), "Usuário": u.get("nome"), "Quantidade": v.get("quantidade",1), "Preço": v.get("preco"), "Data": dv_display})
+    if not dados:
+        Label(frameConteudo, text="Nenhuma venda registrada.", bg=CO_BRANCO).pack(); return
+    colunas = ["Livro","Usuário","Quantidade","Preço","Data"]
+    exibir_tabela(frameConteudo,colunas,dados)
+
+# =========================================================
+# Botões de Menu (mantendo os nomes originais dos ícones)
+# =========================================================
+criar_botao_menu("Novo Usuário", form_novo_usuario, "usuario.png")
+criar_botao_menu("Alterar Usuário", form_alterar_usuario, "editar_usuario.png")
+criar_botao_menu("Listar Usuários", listar_usuarios, "lista_usuarios.png")
+
+criar_botao_menu("Novo Livro", form_novo_livro, "livro.png")
+criar_botao_menu("Alterar Livro", form_alterar_livro, "editar_livro.png")
+criar_botao_menu("Listar Livros", listar_livros, "lista.png")
+
+criar_botao_menu("Empréstimos", form_emprestimos, "emprestimo.png")
+criar_botao_menu("Devoluções", form_devolucoes, "devolucao.png")
+
+criar_botao_menu("Vendas", form_vendas, "vendas.png")
+
+criar_botao_menu("Histórico Empréstimos", historico_emprestimos, "historico.png")
+criar_botao_menu("Histórico Vendas", historico_vendas, "historico_vendas.png")
+
+# =========================================================
+# Inicializa exibindo a lista de livros
+# =========================================================
+listar_livros()
+
 janela.mainloop()
